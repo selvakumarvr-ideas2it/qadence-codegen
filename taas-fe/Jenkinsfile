@@ -1,0 +1,190 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs 'NodeJS-22.17.0'
+    }
+
+    environment {
+        DEPLOY_PATH = '/home/ubuntu/taas-fe'
+        // EC2 host deployment - if Jenkins is in Docker, use SSH to copy to EC2 host
+        // Set these in Jenkins credentials or environment variables
+        EC2_HOST = 'localhost'  // Change to your EC2 hostname/IP if needed
+        EC2_USER = 'ubuntu'     // Change if different
+        // EC2_SSH_KEY should be set in Jenkins credentials or use SSH agent
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+
+        stage('Verify Node.js') {
+            steps {
+                echo 'Verifying Node.js installation...'
+                sh '''
+                    node --version
+                    npm --version
+                '''
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                echo 'Installing npm dependencies...'
+                sh 'npm ci'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'Building the application...'
+                sh 'npm run build'
+            }
+        }
+
+        stage('Backup & Deploy') {
+            steps {
+                echo 'Backing up and deploying...'
+                sh '''
+                    echo "=== DEBUG: Checking workspace ==="
+                    echo "Current directory: $(pwd)"
+                    echo "Workspace contents:"
+                    ls -la
+
+                    # Verify dist folder exists in workspace
+                    if [ ! -d "dist" ]; then
+                        echo "ERROR: dist folder not found in workspace!"
+                        exit 1
+                    fi
+
+                    echo ""
+                    echo "=== Dist folder contents ==="
+                    ls -lah dist/
+                    echo "Dist folder size: $(du -sh dist/)"
+
+                    # Create deployment directory
+                    mkdir -p ${DEPLOY_PATH}
+
+                    echo ""
+                    echo "=== Backup Process ==="
+                    # Backup existing dist if it exists
+                    if [ -d "${DEPLOY_PATH}/dist" ]; then
+                        BACKUP_DATE=$(date +%d_%m_%Y)
+                        BACKUP_NAME="dist_${BACKUP_DATE}.tar.gz"
+
+                        # If backup already exists for today, append timestamp
+                        if [ -f "${DEPLOY_PATH}/${BACKUP_NAME}" ]; then
+                            BACKUP_NAME="dist_${BACKUP_DATE}_$(date +%H%M%S).tar.gz"
+                        fi
+
+                        echo "Creating backup: ${BACKUP_NAME}"
+                        tar -czf ${DEPLOY_PATH}/${BACKUP_NAME} -C ${DEPLOY_PATH} dist/
+
+                        if [ -f "${DEPLOY_PATH}/${BACKUP_NAME}" ]; then
+                            echo "✓ Backup created successfully!"
+                            ls -lh ${DEPLOY_PATH}/${BACKUP_NAME}
+                        else
+                            echo "✗ Backup file NOT created!"
+                        fi
+
+                        # Keep only last 10 backups
+                        echo "Cleaning old backups (keeping last 10)..."
+                        (cd ${DEPLOY_PATH} && ls -t dist_*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f)
+
+                        # Remove old dist
+                        echo "Removing old dist folder..."
+                        rm -rf ${DEPLOY_PATH}/dist
+                    else
+                        echo "No existing dist folder to backup."
+                    fi
+
+                    echo ""
+                    echo "=== Deployment Process ==="
+                    # IMPORTANT: If Jenkins runs in Docker WITHOUT volume mount,
+                    # files go INSIDE container, NOT to EC2 host!
+                    #
+                    # Solution: Use Docker's host path access if container has --privileged
+                    # or use host.docker.internal, or better: copy to host via docker cp or SSH
+
+                    # Try to detect if we're in Docker and if path is mounted
+                    if [ -f "/.dockerenv" ]; then
+                        echo "Detected: Running inside Docker container"
+                        echo "Checking if ${DEPLOY_PATH} is mounted from host..."
+
+                        # Check if path is accessible (mounted from host)
+                        if mountpoint -q ${DEPLOY_PATH} 2>/dev/null || [ -w "${DEPLOY_PATH}" ] 2>/dev/null; then
+                            echo "✓ Path appears to be mounted from host. Deploying directly..."
+                            mkdir -p ${DEPLOY_PATH}
+                            cp -r dist ${DEPLOY_PATH}/
+                            cp -r dist ${DEPLOY_PATH}/dist_cicd
+                            chmod -R 755 ${DEPLOY_PATH}/dist ${DEPLOY_PATH}/dist_cicd
+                        else
+                            echo "⚠ WARNING: Path is NOT mounted from host!"
+                            echo "Files will be copied INSIDE Docker container, NOT to EC2 host!"
+                            echo ""
+                            echo "SOLUTION: Add volume mount when starting Jenkins container:"
+                            echo "  docker run -v /home/ubuntu/taas-fe:/home/ubuntu/taas-fe ..."
+                            echo ""
+                            echo "OR use SSH/SCP to copy files to EC2 host (see commented code below)"
+
+                            # Uncomment this section if you want to use SSH to copy to EC2 host:
+                            # echo "Copying files to EC2 host via SSH..."
+                            # ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "mkdir -p ${DEPLOY_PATH}"
+                            # scp -r dist/* ${EC2_USER}@${EC2_HOST}:${DEPLOY_PATH}/dist/
+                            # scp -r dist/* ${EC2_USER}@${EC2_HOST}:${DEPLOY_PATH}/dist_cicd/
+
+                            # For now, copy to container (will be lost if container is removed)
+                            mkdir -p ${DEPLOY_PATH}
+                            cp -r dist ${DEPLOY_PATH}/ || echo "Failed to copy"
+                            cp -r dist ${DEPLOY_PATH}/dist_cicd || echo "Failed to copy"
+                        fi
+                    else
+                        echo "Running directly on host (not in Docker). Deploying to ${DEPLOY_PATH}..."
+                        mkdir -p ${DEPLOY_PATH}
+                        cp -r dist ${DEPLOY_PATH}/
+                        cp -r dist ${DEPLOY_PATH}/dist_cicd
+                        chmod -R 755 ${DEPLOY_PATH}/dist ${DEPLOY_PATH}/dist_cicd
+                    fi
+
+                    echo ""
+                    echo "=== Verification ==="
+                    echo "Checking deployment directory:"
+                    ls -lah ${DEPLOY_PATH}/ | grep -E "dist|backup"
+
+                    if [ -d "${DEPLOY_PATH}/dist" ]; then
+                        echo "✓ dist folder deployed successfully"
+                        echo "  Size: $(du -sh ${DEPLOY_PATH}/dist/)"
+                    else
+                        echo "✗ dist folder NOT found!"
+                    fi
+
+                    if [ -d "${DEPLOY_PATH}/dist_cicd" ]; then
+                        echo "✓ dist_cicd folder deployed successfully"
+                        echo "  Size: $(du -sh ${DEPLOY_PATH}/dist_cicd/)"
+                    else
+                        echo "✗ dist_cicd folder NOT found!"
+                    fi
+
+                    echo ""
+                    echo "Deployment completed!"
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✓ Pipeline completed successfully!'
+        }
+        failure {
+            echo '✗ Pipeline failed!'
+        }
+        always {
+            echo 'Cleaning up...'
+        }
+    }
+}

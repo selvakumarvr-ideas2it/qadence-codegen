@@ -1,0 +1,26 @@
+{
+  "plugins": ["simple-import-sort"],
+  "rules": {
+    "simple-import-sort/imports": [
+      "error",
+      {
+        "groups": [
+          // 1. React and other external packages (including scoped packages)
+          ["^react", "^@?\\w"],
+          // 2. Absolute imports from your project (adjust this to your alias if needed)
+          ["^@/"],
+          // 3. Relative imports (parent, sibling, index)
+          ["^\\.\\.(?!/?$)", "^\\./(?=.*/)(?!/?$)", "^\\./?$"],
+          // 4. Style imports (css/scss)
+          ["^.+\\.css$"],
+        ],
+      },
+    ],
+    "simple-import-sort/exports": "error",
+  },
+  "settings": {
+    "import/resolver": {
+      "typescript": {},
+    },
+  },
+}

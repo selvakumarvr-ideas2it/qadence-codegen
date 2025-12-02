@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+@import './assets/fonts/fonts.css';
+
+@theme {
+  --color-golden-100: #fff2cc;
+  --color-golden-300: #ffd54f;
+  --color-golden-600: #cc9900;
+
+  --color-charcoal-100: #5555551a;
+  --color-charcoal-300: #55555533;
+  --color-charcoal-600: #555555;
+}
+
+:root {
+  font-family: 'Inter', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+.main-container {
+  position: absolute;
+  width: 95%;
+  right: 0;
+}
+
+/* Sidebar start */
+.sidebar {
+  position: fixed;
+}
+
+.sidebar.expanded-sidebar {
+  width: 15%;
+  z-index: 50;
+}
+
+.sidebar.collapsed-sidebar {
+  width: 5%;
+}
+/* Sidebar end */
+
+/* Custom scrollbar start */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.4); /* Slate-500 w/ opacity */
+  border-radius: 4px;
+}
+
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.6);
+}
+
+div::-webkit-scrollbar {
+  width: 4px;
+}
+
+div::-webkit-scrollbar-thumb {
+  background: rgb(203, 204, 204);
+  border-radius: 8px;
+}
+
+div::-webkit-scrollbar-track {
+  background: rgb(237, 237, 238);
+}
+/* Custom scrollbar end */
